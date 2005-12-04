@@ -237,7 +237,7 @@ class MTC {
         $body  = "The following comment was added:\n\n";
         $body .= "Name: $name\n";
         $body .= "Mail: $mail\n";
-        $body .= "Date: ".date()."\n";
+        $body .= "Date: ".date('r')."\n";
         $body .= "IP  : $ip\n";
         $body .= "Page: $page\n";
         $body .= "URL : http://".$_SERVER['HTTP_HOST'].$url."\n\n";
