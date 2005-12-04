@@ -13,18 +13,18 @@ if(!defined('GRAVATAR_OPTS')) define('GRAVATAR_OPTS','&amp;rating=R');
 
 
 class MTC {
-    
-    var $db_host = 'localhost';
-    var $db_user = 'mtc';
-    var $db_pass = 'mtc';
-    var $db_name = 'mtc';
-
-    // no modifications below
-    var $message = '';
-    var $db_link;
-    var $page;
-    var $addcss = true;
+    var $db_host   = 'localhost';
+    var $db_user   = 'mtc';
+    var $db_pass   = 'mtc';
+    var $db_name   = 'mtc';
+    var $addcss    = true;
     var $blacklist = 'blacklist.txt';
+    var $notify    = '';
+    var $page;
+
+    // internal only
+    var $db_link;
+    var $message = '';
 
     /**
      * To be called in the head section. Handles intializing
@@ -79,8 +79,8 @@ class MTC {
         echo '<div class="'.MTC.'_form" id="'.MTC.'_form">';
         $this->_print_message();
         echo '<form action="#'.MTC.'_form" method="post" accept-charset="utf-8">';
-        echo '<input type="hidden" name="'.MTC.'[do]" value="add" />';
-        echo '<input type="hidden" name="'.MTC.'[page]" value="'.htmlspecialchars($this->page).'" />';
+        echo '<input type="hidden" name="'.MTC.'[do]" value="add" style="display:none" />';
+        echo '<input type="hidden" name="'.MTC.'[page]" value="'.htmlspecialchars($this->page).'" style="display:none" />';
       
         echo '<div class="'.MTC.'_name">';
         echo '<label for="'.MTC.'_name">Your Name:</label>';
@@ -121,8 +121,8 @@ class MTC {
         $text = nl2br($text);
 
         echo '<div class="'.MTC.'_comment">';
-        echo '<a href="#'.MTC.'_'.$number.'" id="'.MTC.'_'.$number.'" class="'.MTC.'_link">'.$number.'</a>';
         echo '<img src="http://www.gravatar.com/avatar.php?gravatar_id='.$md5.GRAVATAR_OPTS.'" alt="" />';
+        echo '<a href="#'.MTC.'_'.$number.'" id="'.MTC.'_'.$number.'" class="'.MTC.'_link">'.$number.'</a>';
 
         echo '<div class="'.MTC.'_text">';
         echo $text;
@@ -147,7 +147,8 @@ class MTC {
     }
 
     /**
-     * Prints minimal CSS for initial styling
+     * Prints minimal CSS for initial styling. Can be suppressed
+     * with the addcss property.
      */
     function print_css(){
         if(!$this->addcss) return;
@@ -171,6 +172,9 @@ class MTC {
         echo '</style>';
     }
 
+    /**
+     * Does the work for adding a comment
+     */
     function _add_comment(){
         $page = trim($_POST[MTC]['page']);
         $name = trim($_POST[MTC]['name']);
@@ -192,12 +196,16 @@ class MTC {
             return;
         }
 
+        $ip   = $_SERVER['REMOTE_ADDR'];
+        $url  = $_SERVER['PHP_SELF'];
+        $this->_mail($page,$name,$mail,$text,$ip,$url);
+
         $page = md5($page);
         $name = addslashes($name);
         $mail = addslashes($mail);
         $text = addslashes($text);
-        $ip   = addslashes($_SERVER['REMOTE_ADDR']);
-        $url  = addslashes($_SERVER['PHP_SELF']);
+        $ip   = addslashes($ip);
+        $url  = addslashes($url);
 
         $sql = "INSERT INTO mtc_comments
                         SET page = '$page',
@@ -219,6 +227,36 @@ class MTC {
         $_POST[MTC]['text'] = '';
     }
 
+    /**
+     * If the notify property is set this function will send a
+     * mail for each comment created.
+     */
+    function _mail($page,$name,$mail,$text,$ip,$url){
+        if(!$this->notify) return;
+
+        $body  = "The following comment was added:\n\n";
+        $body .= "Name: $name\n";
+        $body .= "Mail: $mail\n";
+        $body .= "Date: ".date()."\n";
+        $body .= "IP  : $ip\n";
+        $body .= "Page: $page\n";
+        $body .= "URL : http://".$_SERVER['HTTP_HOST'].$url."\n\n";
+        $body .= $text;
+
+        $body = base64_encode($body);
+
+        $header  = "MIME-Version: 1.0\n";
+        $header .= "Content-Type: text/plain; charset=UTF-8\n";
+        $header .= "Content-Transfer-Encoding: base64";
+
+        $subject = '['.MTC.'] New comment added';
+
+        mail($this->notify,$subject,$body,$header);
+    }
+
+    /**
+     * Output a message if one is set
+     */
     function _print_message(){
         if(!$this->message) return;
         print '<div class="'.MTC.'_message">';
@@ -226,6 +264,9 @@ class MTC {
         print '</div>';
     }
 
+    /**
+     * Connect to the database and return a handle
+     */
     function _get_dbhandle(){
         if($this->link) return $this->link;
 
@@ -267,6 +308,7 @@ class MTC {
      * @author Andreas Gohr <andi@splitbrain.org>
      */
     function _check_blacklist($text){
+        if(!@file_exists($this->blacklist)) return false;
         $blockfile = file($this->blacklist);
         //how many lines to read at once (to work around some PCRE limits)
         if(version_compare(phpversion(),'4.3.0','<')){
