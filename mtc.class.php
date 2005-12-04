@@ -20,6 +20,7 @@ class MTC {
     var $addcss    = true;
     var $blacklist = 'blacklist.txt';
     var $notify    = '';
+    var $adminpass = '';
     var $page;
 
     // internal only
@@ -39,14 +40,16 @@ class MTC {
 
         if(get_magic_quotes_gpc()){
             if (!empty($_POST[MTC]))    $this->_remove_magic_quotes($_POST[MTC]);
-            if (!empty($_GET[MTC]))     $this->_remove_magic_quotes($_POST[MTC]);
-            if (!empty($_REQUEST[MTC])) $this->_remove_magic_quotes($_POST[MTC]);
+            if (!empty($_GET[MTC]))     $this->_remove_magic_quotes($_GET[MTC]);
+            if (!empty($_REQUEST[MTC])) $this->_remove_magic_quotes($_REQUEST[MTC]);
         }
 
         echo $this->print_css();        
 
         if($_POST[MTC]['do'] == 'add'){
             $this->_add_comment();
+        }else if($_POST[MTC]['do'] == 'del'){
+            $this->_del_comment();
         }
 
     }
@@ -143,6 +146,7 @@ class MTC {
         echo '</div>';
 
         echo '<div class="'.MTC.'_clear"></div>';
+        $this->_admin_opts($row['id']);
         echo '</div>';
     }
 
@@ -170,6 +174,56 @@ class MTC {
         echo 'div.'.MTC."_comment div.".MTC."_text { margin-left: 100px; margin-bottom: 1em; }";
         echo 'div.'.MTC."_comment div.".MTC."_clear { clear: both; line-height: 1px; height: 1px; }";
         echo '</style>';
+    }
+
+    /**
+     * Prints the form tags for admin
+     */
+    function _admin_opts($id){
+        if(!$_REQUEST[MTC]['admin']) return;
+        echo '<div class="'.MTC.'_admform">';
+        echo '<form action="#'.MTC.'_form" method="post" accept-charset="utf-8">';
+        echo '<input type="hidden" name="'.MTC.'[do]" value="del" style="display:none" />';
+        echo '<input type="hidden" name="'.MTC.'[page]" value="'.htmlspecialchars($this->page).'" style="display:none" />';
+        echo '<input type="hidden" name="'.MTC.'[id]" value="'.$id.'" style="display:none" />';
+
+        echo '<label for="'.MTC.'_admpass">Admin Password:</label>';
+        echo '<input type="password" name="'.MTC.'[admpass]" value="" id="'.MTC.'_admpass" />';
+
+        echo '<input type="submit" value="Delete" />';
+        echo '</form>';
+        echo '</div>';
+    }
+
+    /**
+     * Does the work for deleting a comment
+     */
+    function _del_comment(){
+        $page    = trim($_POST[MTC]['page']);
+        $id      = trim($_POST[MTC]['id']);
+        $admpass = $_POST[MTC]['admpass'];
+
+        if(! ($page && $id && $admpass) ){
+            $this->message .= 'Sorry, missing parameters! Admin password given?';
+            return;
+        }
+
+        if($this->adminpass != $admpass){
+            $this->message .= 'Sorry, wrong password.';
+            return;
+        }
+
+        $page = md5($page);
+        $id   = addslashes($id);
+        $sql = "DELETE FROM mtc_comments
+                      WHERE page = '$page'
+                        AND id = '$id'";
+
+        $handle = $this->_get_dbhandle();
+        if(!$handle) return;
+        mysql_query($sql,$handle);
+
+        $this->message = 'Comment deleted';        
     }
 
     /**
