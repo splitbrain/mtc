@@ -23,14 +23,13 @@ class MTC {
     var $adminpass  = '';
     var $self       = 'mtc.class.php';
     var $captcha    = true;
-    var $captchasrc = '';
-    var $captchafnt;
     var $page;
     var $secret     = 'CHANGEME!';
 
 
     // internal only
     var $db_link;
+    var $captchafnt;
     var $message = '';
 
     /**
