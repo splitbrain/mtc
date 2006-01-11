@@ -11,21 +11,38 @@ if(!defined('MTC')) define('MTC','MTC'); // used for all POST/GET vars and CSS c
 // see http://gravatar.com/implement.php#section_1_1
 if(!defined('GRAVATAR_OPTS')) define('GRAVATAR_OPTS','&amp;rating=R');
 
-
+// The MTC main class
 class MTC {
-    var $db_host   = 'localhost';
-    var $db_user   = 'mtc';
-    var $db_pass   = 'mtc';
-    var $db_name   = 'mtc';
-    var $addcss    = true;
-    var $blacklist = 'blacklist.txt';
-    var $notify    = '';
-    var $adminpass = '';
+    var $db_host    = 'localhost';
+    var $db_user    = 'mtc';
+    var $db_pass    = 'mtc';
+    var $db_name    = 'mtc';
+    var $addcss     = true;
+    var $blacklist  = 'blacklist.txt';
+    var $notify     = '';
+    var $adminpass  = '';
+    var $self       = 'mtc.class.php';
+    var $captcha    = true;
+    var $captchasrc = '';
+    var $captchafnt;
     var $page;
+    var $secret     = 'CHANGEME!';
+
 
     // internal only
     var $db_link;
     var $message = '';
+
+    /**
+     * Constructor
+     */
+    function MTC(){
+        $this->captchafnt = array(
+            dirname(__FILE__).'/fonts/Vera.ttf',
+            dirname(__FILE__).'/fonts/VeraBd.ttf',
+            dirname(__FILE__).'/fonts/VeraIt.ttf',
+        );
+    }
 
     /**
      * To be called in the head section. Handles intializing
@@ -37,6 +54,7 @@ class MTC {
         }else{
             $this->page = $page;
         }
+
 
         if(get_magic_quotes_gpc()){
             if (!empty($_POST[MTC]))    $this->_remove_magic_quotes($_POST[MTC]);
@@ -79,6 +97,7 @@ class MTC {
      * Show the form to add new comments
      */
     function comment_form(){
+
         echo '<div class="'.MTC.'_form" id="'.MTC.'_form">';
         $this->_print_message();
         echo '<form action="#'.MTC.'_form" method="post" accept-charset="utf-8">';
@@ -94,6 +113,15 @@ class MTC {
         echo '<label for="'.MTC.'_mail">Your E-Mail:</label>';
         echo '<input type="text" name="'.MTC.'[mail]" value="'.htmlspecialchars($_POST[MTC]['mail']).'" id="'.MTC.'_mail" />';
         echo '</div>';
+
+
+        if($this->captcha){
+            echo '<div class="'.MTC.'_captcha">';
+            echo '<label for="'.MTC.'_captcha">Security-Code:</label>';
+            echo '<input type="text" name="'.MTC.'[captcha]" value="" id="'.MTC.'_captcha" />';
+            echo '</div>';
+            $this->print_captcha();
+        }
 
         echo '<div class="'.MTC.'_text">';
         echo '<label for="'.MTC.'_text">Your two Cents:</label>';
@@ -163,6 +191,8 @@ class MTC {
         echo '#'.MTC."_form textarea { margin-left: 50px; display: block; width: 550px; }";
         echo '#'.MTC."_form div.".MTC."_name { float: left; }";
         echo '#'.MTC."_form div.".MTC."_mail { float: left; }";
+        echo '#'.MTC."_form div.".MTC."_captcha { float: left; clear: left;}";
+        echo '#'.MTC."_form img.".MTC."_captcha { float: left; margin-left: 50px;}";
         echo '#'.MTC."_form div.".MTC."_text { clear: left; }";
 
         echo 'div.'.MTC."_comment { border-bottom: 1px solid #000; margin-top: 0.5em; }";
@@ -174,6 +204,55 @@ class MTC {
         echo 'div.'.MTC."_comment div.".MTC."_text { margin-left: 100px; margin-bottom: 1em; }";
         echo 'div.'.MTC."_comment div.".MTC."_clear { clear: both; line-height: 1px; height: 1px; }";
         echo '</style>';
+    }
+
+    /**
+     * Creates a simple 200x50 CAPTCHA image
+     */
+    function captcha_image(){
+        $text = $this->x_Decrypt($_REQUEST[MTC]['captcha'],$this->secret);
+
+        // create a white image
+        $img = imagecreate(200, 50);
+        imagecolorallocate($img, 255, 255, 255);
+
+        // add some lines as background noise
+        for ($i = 0; $i < 60; $i++) {
+            $color = imagecolorallocate($img,rand(100, 250),rand(100, 250),rand(100, 250));
+            imageline($img,rand(0,200),rand(0,50),rand(0,200),rand(0,50),$color);
+         }
+
+        // draw the letters
+        for ($i = 0; $i < strlen($text); $i++){
+            $font  = $this->captchafnt[array_rand($this->captchafnt)];
+            $color = imagecolorallocate($img, rand(0, 100), rand(0, 100), rand(0, 100));
+            $size  = rand(16,25);
+            $angle = rand(-30, 30);
+
+            $x = 10 + $i * 40;
+            $cheight = $size + ($size*0.5);
+            $y = floor(50 / 2 + $cheight / 4);
+
+            imagettftext($img, $size, $angle, $x, $y, $color, $font, $text[$i]);
+        }
+
+        header("Content-type: image/jpeg");
+        imagejpeg($img);
+        imagedestroy($img);
+    }
+
+    /**
+     * Print the HTML for the CAPTCHA
+     */
+    function print_captcha(){
+        $code = '';
+        for($i=0;$i<5;$i++){
+            $code .= chr(rand(65, 90));
+        }
+        $code = $this->x_Encrypt($code,$this->secret);
+
+        echo '<input type="hidden" name="'.MTC.'[code]" value="'.htmlspecialchars($code).'" style="display:none" />';
+        echo '<img src="'.$this->self.'?MTC[do]=captcha&amp;MTC[captcha]='.urlencode($code).'" width="200" height="50" alt="CAPTCHA" class="'.MTC.'_captcha" />';
     }
 
     /**
@@ -234,10 +313,21 @@ class MTC {
         $name = trim($_POST[MTC]['name']);
         $mail = trim($_POST[MTC]['mail']);
         $text = trim($_POST[MTC]['text']);
+        $cptc = trim($_POST[MTC]['captcha']);
+        $code = trim($_POST[MTC]['code']);
 
         if(! ($page && $name && $mail && $text) ){
             $this->message .= 'Sorry, you need to fill all fields!';
             return;
+        }
+
+        if($this->captcha){
+            if(!$cptc || !$code ||
+               (strtoupper($cptc) != strtoupper($this->x_Decrypt($code,$this->secret)))
+              ){
+                $this->message .= 'Sorry, the Security Code was wrong';
+                return;
+            }
         }
 
         if(!$this->_isvalid_mail($mail)){
@@ -389,13 +479,13 @@ class MTC {
         return false;
     }
 
-
     /**
      * remove magic quotes recursivly
      *
      * @author Andreas Gohr <andi@splitbrain.org>
      */
     function _remove_magic_quotes(&$array) {
+        if(!is_array($array)) return;
         foreach (array_keys($array) as $key) {
             if (is_array($array[$key])) {
                 remove_magic_quotes($array[$key]);
@@ -405,6 +495,45 @@ class MTC {
         }
     }
 
+
+    /**
+     * Simple XOR encryption
+     *
+     * @author Dustin Schneider
+     * @link http://www.phpbuilder.com/tips/item.php?id=68
+     */
+    function x_Encrypt($string, $key){
+        for($i=0; $i<strlen($string); $i++){
+            for($j=0; $j<strlen($key); $j++){
+                $string[$i] = $string[$i]^$key[$j];
+            }
+        }
+        return $string;
+    }
+
+    /**
+     * Simple XOR decryption
+     *
+     * @author Dustin Schneider
+     * @link http://www.phpbuilder.com/tips/item.php?id=68
+     */
+    function x_Decrypt($string, $key){
+        for($i=0; $i<strlen($string); $i++){
+            for($j=0; $j<strlen($key); $j++){
+                $string[$i] = $key[$j]^$string[$i];
+            }
+        }
+        return $string;
+    }
+}
+
+/**
+ * Main
+ */
+
+if($_REQUEST[MTC]['do'] == 'captcha'){
+  $mtc = new MTC();
+  $mtc->captcha_image();
 }
 
 //Setup VIM: ex: et ts=4 enc=utf-8 :
