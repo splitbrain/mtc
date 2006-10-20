@@ -23,7 +23,7 @@ class MTC {
     var $adminpass  = '';
     var $self       = 'mtc.class.php';
     var $captcha    = true;
-    var $page;
+    var $page       = '';
     var $secret     = 'CHANGEME!';
 
 
@@ -41,6 +41,12 @@ class MTC {
             dirname(__FILE__).'/fonts/VeraBd.ttf',
             dirname(__FILE__).'/fonts/VeraIt.ttf',
         );
+
+        // auto set the secret (for lazy ones)
+        $secret .= $_SERVER['HTTP_USER_AGENT'];
+        $secret .= $_SERVER['SERVER_SOFTWARE'];
+        $secret .= __FILE__;
+        $secret = md5($secret);
     }
 
     /**
@@ -54,14 +60,14 @@ class MTC {
             $this->page = $page;
         }
 
-
-        if(get_magic_quotes_gpc()){
+        // we do not touch other's variables
+        if(get_magic_quotes_gpc() && !defined('MAGIC_QUOTES_STRIPPED')){
             if (!empty($_POST[MTC]))    $this->_remove_magic_quotes($_POST[MTC]);
             if (!empty($_GET[MTC]))     $this->_remove_magic_quotes($_GET[MTC]);
             if (!empty($_REQUEST[MTC])) $this->_remove_magic_quotes($_REQUEST[MTC]);
         }
 
-        echo $this->print_css();        
+        echo $this->print_css();
 
         if($_POST[MTC]['do'] == 'add'){
             $this->_add_comment();
@@ -102,7 +108,7 @@ class MTC {
         echo '<form action="#'.MTC.'_form" method="post" accept-charset="utf-8">';
         echo '<input type="hidden" name="'.MTC.'[do]" value="add" style="display:none" />';
         echo '<input type="hidden" name="'.MTC.'[page]" value="'.htmlspecialchars($this->page).'" style="display:none" />';
-      
+
         echo '<div class="'.MTC.'_name">';
         echo '<label for="'.MTC.'_name">Your Name:</label>';
         echo '<input type="text" name="'.MTC.'[name]" value="'.htmlspecialchars($_POST[MTC]['name']).'" id="'.MTC.'_name" />';
@@ -244,14 +250,22 @@ class MTC {
      * Print the HTML for the CAPTCHA
      */
     function print_captcha(){
-        $code = '';
-        for($i=0;$i<5;$i++){
-            $code .= chr(rand(65, 90));
-        }
+        $code = $this->_gen_rand();
         $code = $this->x_Encrypt($code,$this->secret);
 
         echo '<input type="hidden" name="'.MTC.'[code]" value="'.htmlspecialchars($code).'" style="display:none" />';
         echo '<img src="'.$this->self.'?MTC[do]=captcha&amp;MTC[captcha]='.urlencode($code).'" width="200" height="50" alt="CAPTCHA" class="'.MTC.'_captcha" />';
+    }
+
+    /**
+     * Generate a 5 char random code
+     */
+    function _gen_rand(){
+        $code = '';
+        for($i=0;$i<5;$i++){
+            $code .= chr(rand(65, 90));
+        }
+        return $code;
     }
 
     /**
@@ -301,7 +315,7 @@ class MTC {
         if(!$handle) return;
         mysql_query($sql,$handle);
 
-        $this->message = 'Comment deleted';        
+        $this->message = 'Comment deleted';
     }
 
     /**
@@ -327,6 +341,8 @@ class MTC {
                 $this->message .= 'Sorry, the Security Code was wrong';
                 return;
             }
+        }else{
+            $code = $this->_gen_rand();
         }
 
         if(!$this->_isvalid_mail($mail)){
@@ -349,15 +365,17 @@ class MTC {
         $text = addslashes($text);
         $ip   = addslashes($ip);
         $url  = addslashes($url);
+        $code = addslashes($code);
 
-        $sql = "INSERT INTO mtc_comments
+        $sql = "INSERT IGNORE INTO mtc_comments
                         SET page = '$page',
                             name = '$name',
                             mail = '$mail',
                             text = '$text',
                             date = NOW(),
                             ip = '$ip',
-                            url  = '$url'";
+                            url  = '$url',
+                            captcha = MD5('$code')";
 
         $handle = $this->_get_dbhandle();
         if(!$handle) return;
@@ -431,7 +449,7 @@ class MTC {
      * Uses a regular expresion to check if a given mail address is valid
      *
      * May not be completly RFC conform!
-     * 
+     *
      * @link    http://www.webmasterworld.com/forum88/135.htm
      *
      * @param   string $email the address to check
@@ -458,11 +476,11 @@ class MTC {
             //old versions of PCRE define a maximum of parenthesises even if no
             //backreferences are used - the maximum is 99
             //this is very bad performancewise and may even be too high still
-            $chunksize = 40; 
+            $chunksize = 40;
         }else{
             //read file in chunks of 600 - this should work around the
             //MAX_PATTERN_SIZE in modern PCRE
-            $chunksize = 600;
+            $chunksize = 200;
         }
         while($blocks = array_splice($blockfile,0,$chunksize)){
             $re = array();
