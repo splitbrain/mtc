@@ -1,46 +1,69 @@
 <?php
 /**
  * My Two Cents - A simple comment system
- * 2005 (c) Andreas Gohr <andi@splitbrain.org>
+ * 2005-2007 (c) Andreas Gohr <andi@splitbrain.org>
  */
 
 
 if(!defined('MTC')) define('MTC','MTC'); // used for all POST/GET vars and CSS classes
 
-// a string to be added to the gravatar url
-// see http://gravatar.com/implement.php#section_1_1
-if(!defined('GRAVATAR_OPTS')) define('GRAVATAR_OPTS','&amp;rating=R');
-
 // The MTC main class
 class MTC {
+    // DB connection
     var $db_host    = 'localhost';
     var $db_user    = 'mtc';
     var $db_pass    = 'mtc';
     var $db_name    = 'mtc';
-    var $addcss     = true;
-    var $blacklist  = 'blacklist.txt';
-    var $notify     = '';
-    var $adminpass  = '';
+
+    // web path to the class file
     var $self       = 'mtc.class.php';
+
+    // antispam
+    var $blacklist  = 'blacklist.txt';
     var $captcha    = true;
-    var $page       = '';
+    var $audio      = false;
+
+    // output
+    var $addcss     = true;
+    var $target     = '';
+
+    // admin stuff
+    var $adminpass  = '';
+    var $notify     = '';
+    var $gravopts   = '&amp;rating=R';
+
+
+    // language strings
+    var $lang = array(
+                    'name'      => 'Your Name:',
+                    'email'     => 'Your E-Mail:',
+                    'captcha'   => 'Security Code:',
+                    'comment'   => 'Your two Cents:',
+                    'info'      => 'No HTML allowed. URLs will be linked with nofollow attribute. Whitespace is preserved.',
+                    'audio'     => 'Click to hear the security code spelled.',
+                    'nofields'  => 'Sorry, you need to fill all fields!',
+                    'noemail'   => 'Sorry, this mail address doesn\'t look valid.',
+                    'nocaptcha' => 'Sorry, the security code was wrong.',
+                    'nospam'    => 'Sorry, spamming is not allowed here.',
+                );
+
+    // you may want to change this for more secure captchas
     var $secret     = 'CHANGEME!';
 
 
     // internal only
     var $db_link;
     var $captchafnt;
-    var $message = '';
+    var $audiodir = '';
+    var $message  = '';
+    var $page     = '';
 
     /**
      * Constructor
      */
     function MTC(){
-        $this->captchafnt = array(
-            dirname(__FILE__).'/fonts/Vera.ttf',
-            dirname(__FILE__).'/fonts/VeraBd.ttf',
-            dirname(__FILE__).'/fonts/VeraIt.ttf',
-        );
+        $this->captchafnt = glob(dirname(__FILE__).'/MTC/fonts/*.ttf');
+        $this->audiodir = dirname(__FILE__).'/MTC/audio/';
 
         // auto set the secret (for lazy ones)
         $secret .= $_SERVER['HTTP_USER_AGENT'];
@@ -78,10 +101,29 @@ class MTC {
     }
 
     /**
+     * return the number of comments
+     */
+    function comment_count($page=''){
+        if(!$page) $page = $this->page;
+        $page = md5($page);
+
+        $sql = "SELECT COUNT(*) as cnt
+                  FROM mtc_comments
+                 WHERE page = '$page'";
+        $handle = $this->_get_dbhandle();
+        if(!$handle) return false;
+        $result = mysql_query($sql,$handle);
+        $row = mysql_fetch_assoc($result);
+        mysql_free_result($result);
+        return $row['cnt'];
+    }
+
+    /**
      * List available comments
      */
-    function comments(){
-        $page = md5($this->page);
+    function comments($page=''){
+        if(!$page) $page = $this->page;
+        $page = md5($page);
 
         $sql = "SELECT id, name, mail, text, date
                   FROM mtc_comments
@@ -110,37 +152,38 @@ class MTC {
         echo '<input type="hidden" name="'.MTC.'[page]" value="'.htmlspecialchars($this->page).'" style="display:none" />';
 
         echo '<div class="'.MTC.'_name">';
-        echo '<label for="'.MTC.'_name">Your Name:</label>';
+        echo '<label for="'.MTC.'_name">'.$this->lang['name'].'</label>';
         echo '<input type="text" name="'.MTC.'[name]" value="'.htmlspecialchars($_POST[MTC]['name']).'" id="'.MTC.'_name" />';
         echo '</div>';
 
         echo '<div class="'.MTC.'_mail">';
-        echo '<label for="'.MTC.'_mail">Your E-Mail:</label>';
+        echo '<label for="'.MTC.'_mail">'.$this->lang['email'].'</label>';
         echo '<input type="text" name="'.MTC.'[mail]" value="'.htmlspecialchars($_POST[MTC]['mail']).'" id="'.MTC.'_mail" />';
         echo '</div>';
 
 
         if($this->captcha){
             echo '<div class="'.MTC.'_captcha">';
-            echo '<label for="'.MTC.'_captcha">Security-Code:</label>';
+            echo '<label for="'.MTC.'_captcha">'.$this->lang['captcha'].'</label>';
             echo '<input type="text" name="'.MTC.'[captcha]" value="" id="'.MTC.'_captcha" />';
             echo '</div>';
             $this->print_captcha();
         }
 
         echo '<div class="'.MTC.'_text">';
-        echo '<label for="'.MTC.'_text">Your two Cents:</label>';
+        echo '<label for="'.MTC.'_text">'.$this->lang['comment'].'</label>';
         echo '<textarea cols="40" rows="10" name="'.MTC.'[text]" id="'.MTC.'_text">'.htmlspecialchars($_POST[MTC]['text']).'</textarea>';
         echo '</div>';
 
         echo '<input type="submit" value="Save" />';
-
+        echo '<p class="'.MTC.'_info">'.$this->lang['info'].'</p>';
         echo '</form>';
         echo '</div>';
     }
 
     /**
-     * Defines how a comment is printed. You may want to tweak this
+     * Defines how a comment is printed. You may want to tweak this, but using CSS should be
+     * enough usually
      */
     function format_comment($row){
         static $number = 0;
@@ -151,13 +194,14 @@ class MTC {
 
         $text = htmlspecialchars($row['text']);
         $text = preg_replace('/  /',' &nbsp;',$text);
-        $text = preg_replace('/((https?|ftp):\/\/[\w-?&;#~=\.\/\@]+[\w\/])/ui',
-                             '<a href="\\1" target="_blank" rel="nofollow">\\1</a>',
-                             $text);
+        $text = preg_replace_callback('/((https?|ftp):\/\/[\w-?&;#~=\.\/\@]+[\w\/])/ui',
+                                      array($this,'_format_link'),$text);
         $text = nl2br($text);
 
+        $opts = str_replace('@MD5@',$md5,$gravopts);
+
         echo '<div class="'.MTC.'_comment">';
-        echo '<img src="http://www.gravatar.com/avatar.php?gravatar_id='.$md5.GRAVATAR_OPTS.'" alt="" />';
+        echo '<img src="http://www.gravatar.com/avatar.php?gravatar_id='.$md5.$opts.'" alt="" />';
         echo '<a href="#'.MTC.'_'.$number.'" id="'.MTC.'_'.$number.'" class="'.MTC.'_link">'.$number.'</a>';
 
         echo '<div class="'.MTC.'_text">';
@@ -247,14 +291,39 @@ class MTC {
     }
 
     /**
+     * Stiches an audio CAPTCHA
+     */
+    function captcha_audio(){
+        $text = $this->x_Decrypt($_REQUEST[MTC]['captcha'],$this->secret);
+        $text = strtolower($text);
+
+        // prepare wave files
+        $wavs = array();
+        for($i=0;$i<5;$i++){
+            $wavs[] = $this->audiodir.'/'.$text{$i}.'.wav';
+        }
+        // send stiched one
+        header('Content-type: audio/x-wav');
+        header('Content-Disposition: attachment;filename=captcha.wav');
+        echo $this->_joinwavs($wavs);
+    }
+
+    /**
      * Print the HTML for the CAPTCHA
      */
     function print_captcha(){
         $code = $this->_gen_rand();
         $code = $this->x_Encrypt($code,$this->secret);
 
-        echo '<input type="hidden" name="'.MTC.'[code]" value="'.htmlspecialchars($code).'" style="display:none" />';
-        echo '<img src="'.$this->self.'?MTC[do]=captcha&amp;MTC[captcha]='.urlencode($code).'" width="200" height="50" alt="CAPTCHA" class="'.MTC.'_captcha" />';
+        echo '<input type="hidden" name="MTC[code]" value="'.htmlspecialchars($code).'" style="display:none" />';
+
+        if($this->audio){
+            echo '<a href="'.$this->self.'?MTC[do]=audio&amp;MTC[captcha]='.urlencode($code).'" title="'.$this->lang['audio'].'">';
+        }
+        echo '<img src="'.$this->self.'?MTC[do]=captcha&amp;MTC[captcha]='.urlencode($code).'" width="200" height="50" alt="CAPTCHA" class="'.MTC.'_captcha" border="0" />';
+        if($this->audio){
+            echo '</a>';
+        }
     }
 
     /**
@@ -267,6 +336,66 @@ class MTC {
         }
         return $code;
     }
+
+    /**
+     * Callback to autolink a URL (with shortening)
+     */
+    function _format_link($match){
+        $url = $match[1];
+        str_replace("\\\\'","'",$url);
+        if(strlen($url) > 40){
+            $title = substr($url,0,30).' &hellip; '.substr($url,-10);
+        }else{
+            $title = $url;
+        }
+        $link = '<a href="'.$url.'"';
+        if($this->target) $link .= ' target="'.$this->target.'"';
+        $link .= 'rel="nofollow">'.$title.'</a>';
+        return $link;
+    }
+
+    /**
+     * Join multiple wav files
+     *
+     * All wave files need to have the same format and need to be uncompressed.
+     * The headers of the last file will be used (with recalculated datasize
+     * of course)
+     *
+     * @link http://ccrma.stanford.edu/CCRMA/Courses/422/projects/WaveFormat/
+     * @link http://www.thescripts.com/forum/thread3770.html
+     * @link http://www.splitbrain.org/blog/2006-11/15-joining_wavs_with_php
+     */
+    function _joinwavs($wavs){
+        $fields = join('/',array( 'H8ChunkID', 'VChunkSize', 'H8Format',
+                                  'H8Subchunk1ID', 'VSubchunk1Size',
+                                  'vAudioFormat', 'vNumChannels', 'VSampleRate',
+                                  'VByteRate', 'vBlockAlign', 'vBitsPerSample' ));
+
+        $data = '';
+        foreach($wavs as $wav){
+            $fp     = fopen($wav,'rb');
+            $header = fread($fp,36);
+            $info   = unpack($fields,$header);
+
+            // read optional extra stuff
+            if($info['Subchunk1Size'] > 16){
+                $header .= fread($fp,($info['Subchunk1Size']-16));
+            }
+
+            // read SubChunk2ID
+            $header .= fread($fp,4);
+
+            // read Subchunk2Size
+            $size  = unpack('vsize',fread($fp, 4));
+            $size  = $size['size'];
+
+            // read data
+            $data .= fread($fp,$size);
+        }
+
+        return $header.pack('V',strlen($data)).$data;
+    }
+
 
     /**
      * Prints the form tags for admin
@@ -330,7 +459,7 @@ class MTC {
         $code = trim($_POST[MTC]['code']);
 
         if(! ($page && $name && $mail && $text) ){
-            $this->message .= 'Sorry, you need to fill all fields!';
+            $this->message .= $this->lang['nofield'];
             return;
         }
 
@@ -338,7 +467,7 @@ class MTC {
             if(!$cptc || !$code ||
                (strtoupper($cptc) != strtoupper($this->x_Decrypt($code,$this->secret)))
               ){
-                $this->message .= 'Sorry, the Security Code was wrong';
+                $this->message .= $this->lang['captcha'];
                 return;
             }
         }else{
@@ -346,12 +475,12 @@ class MTC {
         }
 
         if(!$this->_isvalid_mail($mail)){
-            $this->message .= "Sorry, this mail address doesn't look valid.";
+            $this->message .= $this->lang['noemail'];
             return;
         }
 
         if($this->_check_blacklist($text)){
-            $this->message .= "Sorry, spamming is not allowed.";
+            $this->message .= $this->lang['nospam'];
             return;
         }
 
@@ -548,9 +677,12 @@ class MTC {
  * Main
  */
 
-if($_REQUEST[MTC]['do'] == 'captcha'){
-  $mtc = new MTC();
-  $mtc->captcha_image();
+if($_REQUEST['MTC']['do'] == 'captcha'){
+    $mtc = new MTC();
+    $mtc->captcha_image();
+}elseif($_REQUEST['MTC']['do'] == 'audio'){
+    $mtc = new MTC();
+    $mtc->captcha_audio();
 }
 
 //Setup VIM: ex: et ts=4 enc=utf-8 :
