@@ -198,7 +198,7 @@ class MTC {
                                       array($this,'_format_link'),$text);
         $text = nl2br($text);
 
-        $opts = str_replace('@MD5@',$md5,$gravopts);
+        $opts = str_replace('@MD5@',$md5,$this->gravopts);
 
         echo '<div class="'.MTC.'_comment">';
         echo '<img src="http://www.gravatar.com/avatar.php?gravatar_id='.$md5.$opts.'" alt="" />';
