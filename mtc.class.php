@@ -212,9 +212,9 @@ class MTC {
 
         $opts = str_replace('@MD5@',$md5,$this->gravopts);
 
-        echo '<div class="'.MTC.'_comment" id="'.MTC.'_c'.$number.'">';
+        echo '<div class="'.MTC.'_comment" id="comment-'.$number.'">';
         echo '<img src="http://www.gravatar.com/avatar.php?gravatar_id='.$md5.$opts.'" alt="" />';
-        echo '<a href="#'.MTC.'_'.$number.'" id="'.MTC.'_'.$number.'" class="'.MTC.'_link">'.$number.'</a>';
+        echo '<a href="#comment-'.$number.'" rel="self bookmark" class="'.MTC.'_link">'.$number.'</a>';
 
         echo '<div class="'.MTC.'_text">';
         echo $text;
