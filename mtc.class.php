@@ -22,6 +22,7 @@ class MTC {
     var $blacklist  = 'blacklist.txt';
     var $captcha    = true;
     var $audio      = false;
+    var $showmail   = false;
 
     // output
     var $addcss     = true;
@@ -37,12 +38,14 @@ class MTC {
     var $lang = array(
                     'name'      => 'Your Name:',
                     'email'     => 'Your E-Mail:',
+                    'web'       => 'Website (optional):',
                     'captcha'   => 'Security Code:',
                     'comment'   => 'Your two Cents:',
                     'info'      => 'No HTML allowed. URLs will be linked with nofollow attribute. Whitespace is preserved.',
                     'audio'     => 'Click to hear the security code spelled.',
-                    'nofields'  => 'Sorry, you need to fill all fields!',
+                    'nofield'   => 'Sorry, you need to fill all necessary fields!',
                     'noemail'   => 'Sorry, this mail address doesn\'t look valid.',
+                    'noweb'     => 'Sorry, this web address doesn\'t look valid.',
                     'nocaptcha' => 'Sorry, the security code was wrong.',
                     'nospam'    => 'Sorry, spamming is not allowed here.',
                 );
@@ -70,6 +73,10 @@ class MTC {
         $secret .= $_SERVER['SERVER_SOFTWARE'];
         $secret .= __FILE__;
         $secret = md5($secret);
+
+        if($this->target){
+            $this->target = 'target="'.$this->target.'"';
+        }
     }
 
     /**
@@ -125,7 +132,7 @@ class MTC {
         if(!$page) $page = $this->page;
         $page = md5($page);
 
-        $sql = "SELECT id, name, mail, text, date
+        $sql = "SELECT id, name, mail, web, text, date
                   FROM mtc_comments
                  WHERE page = '$page'
               ORDER BY date";
@@ -161,6 +168,10 @@ class MTC {
         echo '<input type="text" name="'.MTC.'[mail]" value="'.htmlspecialchars($_POST[MTC]['mail']).'" id="'.MTC.'_mail" />';
         echo '</div>';
 
+        echo '<div class="'.MTC.'_web">';
+        echo '<label for="'.MTC.'_web">'.$this->lang['web'].'</label>';
+        echo '<input type="text" name="'.MTC.'[web]" value="'.htmlspecialchars($_POST[MTC]['web']).'" id="'.MTC.'_web" />';
+        echo '</div>';
 
         if($this->captcha){
             echo '<div class="'.MTC.'_captcha">';
@@ -193,6 +204,7 @@ class MTC {
         $obf = strtr($row['mail'],array('@' => ' [at] ', '.' => ' [dot] ', '-' => ' [dash] '));
 
         $text = htmlspecialchars($row['text']);
+        $text = preg_replace('/\t/','    ',$text);
         $text = preg_replace('/  /',' &nbsp;',$text);
         $text = preg_replace_callback('/((https?|ftp):\/\/[\w-?&;#~=\.\/\@]+[\w\/])/ui',
                                       array($this,'_format_link'),$text);
@@ -200,7 +212,7 @@ class MTC {
 
         $opts = str_replace('@MD5@',$md5,$this->gravopts);
 
-        echo '<div class="'.MTC.'_comment">';
+        echo '<div class="'.MTC.'_comment" id="'.MTC.'_c'.$number.'">';
         echo '<img src="http://www.gravatar.com/avatar.php?gravatar_id='.$md5.$opts.'" alt="" />';
         echo '<a href="#'.MTC.'_'.$number.'" id="'.MTC.'_'.$number.'" class="'.MTC.'_link">'.$number.'</a>';
 
@@ -215,9 +227,17 @@ class MTC {
         echo '</div>';
 
         echo '<div class="'.MTC.'_user">';
-        echo '<a href="mailto:'.htmlspecialchars($obf).'">';
-        echo htmlspecialchars($row['name']);
-        echo '</a>';
+        if($row['web']){
+            echo '<a href="'.htmlspecialchars($row['web']).'" rel="nofollow" '.$this->target.' class="url">';
+            echo htmlspecialchars($row['name']);
+            echo '</a>';
+        }elseif($this->showmail){
+            echo '<a href="mailto:'.htmlspecialchars($obf).'" class="mail">';
+            echo htmlspecialchars($row['name']);
+            echo '</a>';
+        }else{
+            echo htmlspecialchars($row['name']);
+        }
         echo '</div>';
 
         echo '</div>';
@@ -240,6 +260,7 @@ class MTC {
         echo '#'.MTC."_form textarea { margin-left: 50px; display: block; width: 550px; }";
         echo '#'.MTC."_form div.".MTC."_name { float: left; }";
         echo '#'.MTC."_form div.".MTC."_mail { float: left; }";
+        echo '#'.MTC."_form div.".MTC."_web  { float: left; clear: left;}";
         echo '#'.MTC."_form div.".MTC."_captcha { float: left; clear: left;}";
         echo '#'.MTC."_form img.".MTC."_captcha { float: left; margin-left: 50px;}";
         echo '#'.MTC."_form div.".MTC."_text { clear: left; }";
@@ -348,9 +369,7 @@ class MTC {
         }else{
             $title = $url;
         }
-        $link = '<a href="'.$url.'"';
-        if($this->target) $link .= ' target="'.$this->target.'"';
-        $link .= 'rel="nofollow">'.$title.'</a>';
+        $link = '<a href="'.$url.'" '.$this->target.' rel="nofollow">'.$title.'</a>';
         return $link;
     }
 
@@ -454,6 +473,7 @@ class MTC {
         $page = trim($_POST[MTC]['page']);
         $name = trim($_POST[MTC]['name']);
         $mail = trim($_POST[MTC]['mail']);
+        $web  = trim($_POST[MTC]['web']);
         $text = trim($_POST[MTC]['text']);
         $cptc = trim($_POST[MTC]['captcha']);
         $code = trim($_POST[MTC]['code']);
@@ -467,11 +487,16 @@ class MTC {
             if(!$cptc || !$code ||
                (strtoupper($cptc) != strtoupper($this->x_Decrypt($code,$this->secret)))
               ){
-                $this->message .= $this->lang['captcha'];
+                $this->message .= $this->lang['nocaptcha'];
                 return;
             }
         }else{
             $code = $this->_gen_rand();
+        }
+
+        if($web && !preg_match('=https?://=i',$web)){
+            $this->message .= $this->lang['noweb'];
+            return;
         }
 
         if(!$this->_isvalid_mail($mail)){
@@ -485,21 +510,22 @@ class MTC {
         }
 
         $ip   = $_SERVER['REMOTE_ADDR'];
-        $url  = $_SERVER['PHP_SELF'];
-        $this->_mail($page,$name,$mail,$text,$ip,$url);
+        $this->_mail($page,$name,$mail,$text,$ip,$_SERVER['PHP_SELF']);
 
+        $url  = addslashes($page);
         $page = md5($page);
         $name = addslashes($name);
         $mail = addslashes($mail);
+        $web  = addslashes($web);
         $text = addslashes($text);
         $ip   = addslashes($ip);
-        $url  = addslashes($url);
         $code = addslashes($code);
 
         $sql = "INSERT IGNORE INTO mtc_comments
                         SET page = '$page',
                             name = '$name',
                             mail = '$mail',
+                            web  = '$web',
                             text = '$text',
                             date = NOW(),
                             ip = '$ip',
@@ -514,6 +540,7 @@ class MTC {
         $_POST[MTC]['page'] = '';
         $_POST[MTC]['name'] = '';
         $_POST[MTC]['mail'] = '';
+        $_POST[MTC]['web']  = '';
         $_POST[MTC]['text'] = '';
     }
 

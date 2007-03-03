@@ -17,3 +17,6 @@ PRIMARY KEY ( `page`, `id` )
 ALTER TABLE `mtc_comments` ADD `captcha` VARCHAR( 32 ) NOT NULL ;
 UPDATE `mtc_comments` SET captcha = MD5( RAND( ) ) ;
 ALTER TABLE `mtc_comments` ADD UNIQUE ( `captcha` ) ;
+
+-- Added 2006-03-03
+ALTER TABLE `mtc_comments` ADD `web` VARCHAR( 255 ) ;
