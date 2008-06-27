@@ -511,7 +511,7 @@ class MTC {
         }
 
         $ip   = $_SERVER['REMOTE_ADDR'];
-        $this->_mail($page,$name,$mail,$text,$ip,$_SERVER['PHP_SELF']);
+        $this->_mail($page,$name,$mail,$web,$text,$ip,$_SERVER['PHP_SELF']);
 
         $url  = addslashes($page);
         $page = md5($page);
@@ -549,12 +549,13 @@ class MTC {
      * If the notify property is set this function will send a
      * mail for each comment created.
      */
-    function _mail($page,$name,$mail,$text,$ip,$url){
+    function _mail($page,$name,$mail,$web,$text,$ip,$url){
         if(!$this->notify) return;
 
         $body  = "The following comment was added:\n\n";
         $body .= "Name: $name\n";
         $body .= "Mail: $mail\n";
+        $body .= "Web : $web\n";
         $body .= "Date: ".date('r')."\n";
         $body .= "IP  : $ip\n";
         $body .= "Page: $page\n";
