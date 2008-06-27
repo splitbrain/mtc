@@ -206,7 +206,7 @@ class MTC {
         $text = htmlspecialchars($row['text']);
         $text = preg_replace('/\t/','    ',$text);
         $text = preg_replace('/  /',' &nbsp;',$text);
-        $text = preg_replace_callback('/((https?|ftp):\/\/[\w-?&;#~=\.\/\@]+[\w\/])/ui',
+        $text = preg_replace_callback('/((https?|ftp):\/\/[\w-?&;:#~=\.\/\@]+[\w\/])/ui',
                                       array($this,'_format_link'),$text);
         $text = nl2br($text);
 
