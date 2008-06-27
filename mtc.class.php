@@ -423,6 +423,7 @@ class MTC {
         if(!$_REQUEST[MTC]['admin']) return;
         echo '<div class="'.MTC.'_admform">';
         echo '<form action="#'.MTC.'_form" method="post" accept-charset="utf-8">';
+        echo '<input type="hidden" name="'.MTC.'[admin]" value="1" style="display:none" />';
         echo '<input type="hidden" name="'.MTC.'[do]" value="del" style="display:none" />';
         echo '<input type="hidden" name="'.MTC.'[page]" value="'.htmlspecialchars($this->page).'" style="display:none" />';
         echo '<input type="hidden" name="'.MTC.'[id]" value="'.$id.'" style="display:none" />';
