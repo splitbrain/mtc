@@ -60,34 +60,52 @@ class MTC {
     var $audiodir = '';
     var $message  = '';
     var $page     = '';
+    var $seedlen  = 0;
+    var $seedpos  = 0;
 
     /**
      * Constructor
      */
     function MTC(){
+        // set some defaults
         $this->captchafnt = glob(dirname(__FILE__).'/MTC/fonts/*.ttf');
         $this->audiodir = dirname(__FILE__).'/MTC/audio/';
-
-        // auto set the secret (for lazy ones)
-        $secret .= $_SERVER['HTTP_USER_AGENT'];
-        $secret .= $_SERVER['SERVER_SOFTWARE'];
-        $secret .= __FILE__;
-        $secret = md5($secret);
-
-        if($this->target){
-            $this->target = 'target="'.$this->target.'"';
-        }
     }
+
+    /**
+     * Initialize variables
+     */
+    function setup(){
+        // auto set the secret (for lazy ones)
+        $this->secret .= $_SERVER['HTTP_USER_AGENT'];
+        $this->secret .= $_SERVER['SERVER_SOFTWARE'];
+        $this->secret .= __FILE__;
+        $this->secret = md5($this->secret);
+
+
+        // use initialized random generator to create two secret numbers
+        srand(hexdec(substr($this->secret,0,6))); // init random generator
+        $this->seedpos = rand(0,4);
+        $this->seedlen = rand(3,5);
+        srand(); // make generator random again
+    }
+
 
     /**
      * To be called in the head section. Handles intializing
      * and POST/GET variables
      */
     function init($page = ''){
+        $this->setup();
+
         if(!$page){
             $this->page = $_SERVER['PHP_SELF'];
         }else{
             $this->page = $page;
+        }
+
+        if($this->target){
+            $this->target = 'target="'.$this->target.'"';
         }
 
         // we do not touch other's variables
@@ -280,7 +298,9 @@ class MTC {
      * Creates a simple 200x50 CAPTCHA image
      */
     function captcha_image(){
-        $text = $this->x_Decrypt($_REQUEST[MTC]['captcha'],$this->secret);
+        $this->setup();
+
+        $text = $this->_decrypt($_REQUEST[MTC]['captcha']);
 
         // create a white image
         $img = imagecreate(200, 50);
@@ -315,7 +335,9 @@ class MTC {
      * Stiches an audio CAPTCHA
      */
     function captcha_audio(){
-        $text = $this->x_Decrypt($_REQUEST[MTC]['captcha'],$this->secret);
+        $this->setup();
+
+        $text = $this->_decrypt($_REQUEST[MTC]['captcha']);
         $text = strtolower($text);
 
         // prepare wave files
@@ -330,29 +352,51 @@ class MTC {
     }
 
     /**
+     * Return an encrypted image string
+     */
+    function _encrypt(){
+        $code  = $this->_gen_rand(5);              // clear text image code
+        $seed  = $this->_gen_rand($this->seedlen); // clear text seed
+        $ccode = $this->x_Encrypt($code,$this->secret.$seed); // crypted code
+        $cseed = $this->x_Encrypt($seed,$this->secret);       // crypted code
+        // now combine
+        $crypt = substr($ccode,0,$this->seedpos).$cseed.substr($ccode,$this->seedpos);
+        return base64_encode($crypt);
+    }
+
+    /**
+     * Return the decrypted image string
+     */
+    function _decrypt($input){
+        $input = base64_decode($input);
+        $cseed = substr($input,$this->seedpos,$this->seedlen);
+        $seed  = $this->x_Decrypt($cseed,$this->secret);
+        $ccode = substr($input,0,$this->seedpos).substr($input,$this->seedpos+$this->seedlen);
+        return $this->x_Decrypt($ccode,$this->secret.$seed);
+    }
+
+    /**
      * Print the HTML for the CAPTCHA
      */
     function print_captcha(){
-        $code = $this->_gen_rand();
-        $code = $this->x_Encrypt($code,$this->secret);
-
-        echo '<input type="hidden" name="MTC[code]" value="'.htmlspecialchars($code).'" style="display:none" />';
+        $crypt = $this->_encrypt();
+        echo '<input type="hidden" name="MTC[code]" value="'.$this->_hexescape($crypt).'" style="display:none" />';
 
         if($this->audio){
-            echo '<a href="'.$this->self.'?MTC[do]=audio&amp;MTC[captcha]='.urlencode($code).'" title="'.$this->lang['audio'].'">';
+            echo '<a href="'.$this->self.'?MTC[do]=audio&amp;MTC[captcha]='.rawurlencode($crypt).'" title="'.$this->lang['audio'].'">';
         }
-        echo '<img src="'.$this->self.'?MTC[do]=captcha&amp;MTC[captcha]='.urlencode($code).'" width="200" height="50" alt="CAPTCHA" class="'.MTC.'_captcha" border="0" />';
+        echo '<img src="'.$this->self.'?MTC[do]=captcha&amp;MTC[captcha]='.rawurlencode($crypt).'" width="200" height="50" alt="CAPTCHA" class="'.MTC.'_captcha" border="0" />';
         if($this->audio){
             echo '</a>';
         }
     }
 
     /**
-     * Generate a 5 char random code
+     * Generate a random code
      */
-    function _gen_rand(){
+    function _gen_rand($max){
         $code = '';
-        for($i=0;$i<5;$i++){
+        for($i=0;$i<$max;$i++){
             $code .= chr(rand(65, 90));
         }
         return $code;
@@ -486,13 +530,13 @@ class MTC {
 
         if($this->captcha){
             if(!$cptc || !$code ||
-               (strtoupper($cptc) != strtoupper($this->x_Decrypt($code,$this->secret)))
+               (strtoupper($cptc) != strtoupper($this->_decrypt($code)))
               ){
                 $this->message .= $this->lang['nocaptcha'];
                 return;
             }
         }else{
-            $code = $this->_gen_rand();
+            $code = $this->_gen_rand(5);
         }
 
         if($web && !preg_match('=https?://=i',$web)){
@@ -670,6 +714,22 @@ class MTC {
         }
     }
 
+    /**
+     * Escape a given string as hex entities
+     */
+    function _hexescape($string){
+        $encode = '';
+        for ($x=0; $x < strlen($string); $x++) $encode .= '&#x' . bin2hex($string{$x}).';';
+        return $encode;
+    }
+    /**
+     * Escape a given string as url entities
+     */
+    function _urlescape($string){
+        $encode = '';
+        for ($x=0; $x < strlen($string); $x++) $encode .= '%' . bin2hex($string{$x});
+        return $encode;
+    }
 
     /**
      * Simple XOR encryption
