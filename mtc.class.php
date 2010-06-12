@@ -437,6 +437,7 @@ class MTC {
         $data = '';
         foreach($wavs as $wav){
             $fp     = fopen($wav,'rb');
+            if(!$fp) die('failed to load wav file');
             $header = fread($fp,36);
             $info   = unpack($fields,$header);
 
